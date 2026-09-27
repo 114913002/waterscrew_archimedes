@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>阿基米德螺旋抽水器探究實驗室</title>
+<style>
+    body {
+        font-family: "微軟正黑體", Arial, sans-serif;
+        background-color: #f4f4f4;
+        margin: 0;
+        padding: 20px;
+    }
+    h1 { text-align: center; }
+    .container {
+        margin: 0 auto;
+        max-width: 900px;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    .video-container, .next-button, .back-button { text-align: center; }
+    .next-button, .back-button, #start-button, #discuss-results, #retry-button {
+        margin-top: 15px;
+        padding: 10px 20px;
+        font-size: 16px;
+        cursor: pointer;
+        border-radius: 6px;
+        border: none;
+        background: #4a90e2;
+        color: white;
+    }
+    #retry-button { background: #27ae60; }
+    #discuss-results:disabled { background: #aaa; cursor: not-allowed; }
+
+    /* ================= 手繪螺旋泵浦場景 ================= */
+    .pump-scene {
+        position: relative;
+        width: 360px;
+        height: 280px;
+        margin: 20px auto;
+        background: linear-gradient(to bottom, #eef8ff 0%, #eef8ff 62%, #d8c39c 62%, #d8c39c 100%);
+        border: 2px solid #333;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    /* 取水槽 */
+    .water-basin {
+        position: absolute;
+        left: 14px;
+        bottom: 14px;
+        width: 92px;
+        height: 56px;
+        background: #3399ff;
+        border: 4px solid #2c3e50;
+        border-radius: 10px 10px 4px 4px;
+    }
+    .water-basin::before {
+        content: "";
+        position: absolute;
+        top: 6px; left: 8px;
+        width: 76px; height: 10px;
+        background: rgba(255,255,255,0.5);
+        border-radius: 50%;
+    }
+    /* 傾斜外管的旋轉容器：pivot 在取水槽右上角 */
+    .pump-tube-wrapper {
+        position: absolute;
+        left: 70px;
+        top: 235px;
+        width: 250px;
+        height: 0;
+        transform-origin: 0% 50%;
+        transform: rotate(-45deg); /* 由 JS 依角度即時更新 */
+    }
+    .pump-tube {
+        position: absolute;
+        left: 0;
+        top: -22px;
+        width: 250px;
+        height: 44px;
+        border: 4px solid #3e2a17;
+        background: #b3835a;
+        border-radius: 22px;
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+    .screw-thread {
+        position: absolute;
+        inset: 0;
+        background: repeating-linear-gradient(120deg, #e2c193 0 12px, #8a5b34 12px 24px);
+        background-size: 34px 100%;
+    }
+    .running .screw-thread {
+        animation: threadMove linear infinite;
+        animation-duration: var(--dur, 1.5s);
+    }
+    @keyframes threadMove {
+        from { background-position: 0 0; }
+        to   { background-position: 204px 0; }
+    }
+    /* 出水口（隨管子一起旋轉，永遠在管子末端） */
+    .outlet-cup {
+        position: absolute;
+        left: 228px;
+        top: -34px;
+        width: 34px;
+        height: 26px;
+        background: #5b3a20;
+        border: 3px solid #2e1c0c;
+        border-radius: 6px 6px 14px 14px;
+    }
+    /* 水滴：沿管子局部座標從左(取水端)移到右(出水端) */
+    .water-drop {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 30% 30%, #cdeeff, #2f8fdb);
+        top: 50%;
+        margin-top: -6px;
+        left: 14px;
+        opacity: 0;
+    }
+    .running .water-drop {
+        animation: carryUp linear infinite;
+        animation-duration: var(--dur, 1.5s);
+    }
+    .water-drop:nth-child(4) { animation-delay: calc(var(--dur, 1.5s) / 3 * 1); }
+    .water-drop:nth-child(5) { animation-delay: calc(var(--dur, 1.5s) / 3 * 2); }
+    @keyframes carryUp {
+        0%   { left: 14px;  opacity: 0; }
+        8%   { opacity: 1; }
+        90%  { opacity: 1; }
+        100% { left: 224px; opacity: 0; }
+    }
+    /* 底部手搖馬達 */
+    .crank-motor {
+        position: absolute;
+        left: 70px;
+        top: 235px;
+        width: 30px;
+        height: 30px;
+        margin-left: -15px;
+        margin-top: -15px;
+        border-radius: 50%;
+        background: #c0392b;
+        border: 3px solid #7b1f1f;
+    }
+    .crank-motor::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 3px;
+        width: 4px;
+        height: 11px;
+        background: #7b1f1f;
+        transform: translateX(-50%);
+    }
+    .crank-motor.running {
+        animation: spin linear infinite;
+        animation-duration: var(--dur, 1.5s);
+    }
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+    }
+    table, th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    th { background-color: #f2f2f2; }
+
+    /* ===== 全螢幕警示 ===== */
+    .warning-overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(255,255,255,0.97);
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+    }
+    .warning-box {
+        text-align: center;
+        max-width: 500px;
+        padding: 40px;
+        border: 3px solid #e74c3c;
+        border-radius: 12px;
+        background: white;
+    }
+    .warning-box h2 { color: #e74c3c; }
+
+    .charts-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 30px;
+        margin-top: 20px;
+    }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>阿基米德螺旋抽水器探究實驗室</h1>
+
+    <!-- 階段1：介紹影片 -->
+    <div class="video-container" id="intro">
+        <h2>階段 1：認識螺旋抽水器</h2>
+        <iframe width="560" height="315" src="https://www.youtube.com/embed/dX9GvCF6620" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+        <br>
+        <button class="next-button" id="enter-lab">進入實驗室</button>
+    </div>
+
+    <!-- 階段2：操作模擬 -->
+    <div id="experiment" style="display:none;">
+        <h2>階段 2：操作模擬</h2>
+
+        <div class="pump-scene" id="pump-scene">
+            <div class="water-basin"></div>
+            <div class="pump-tube-wrapper" id="pump-tube-wrapper">
+                <div class="pump-tube" id="pump-tube">
+                    <div class="screw-thread"></div>
+                </div>
+                <div class="outlet-cup"></div>
+                <div class="water-drop"></div>
+                <div class="water-drop"></div>
+                <div class="water-drop"></div>
+            </div>
+            <div class="crank-motor" id="crank-motor"></div>
+        </div>
+
+        <label for="angle">幫浦與地面夾角:</label>
+        <select id="angle">
+            <option value="30">30度</option>
+            <option value="45" selected>45度</option>
+            <option value="60">60度</option>
+        </select>
+        <br><br>
+        <label for="speed">轉速:</label>
+        <select id="speed">
+            <option value="low" selected>低速</option>
+            <option value="medium">中速</option>
+            <option value="high">高速</option>
+        </select>
+        <br><br>
+        <label for="diameter">管徑半徑:</label>
+        <select id="diameter">
+            <option value="2">2 公尺</option>
+            <option value="4">4 公尺</option>
+            <option value="6" selected>6 公尺</option>
+        </select>
+        <br>
+        <button id="start-button">啟動</button>
+
+        <div id="results" style="display:none;">
+            <h3>實驗數據紀錄</h3>
+            <table id="data-table">
+                <thead>
+                    <tr>
+                        <th>實驗編號</th>
+                        <th>夾角 (度)</th>
+                        <th>轉速</th>
+                        <th>半徑 (公尺)</th>
+                        <th>輸水效率 (%)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <p id="hint" style="color:#888;">完成至少 3 次實驗才能進入結果討論區</p>
+            <button id="discuss-results" disabled>進入結果討論區</button>
+        </div>
+    </div>
+
+    <!-- 階段3：結果討論區 -->
+    <div id="discussion" style="display:none;">
+        <h2>階段 3：結果討論區</h2>
+        <div class="charts-grid">
+            <div><h3>夾角 vs 輸水效率</h3><canvas id="chart-angle"></canvas></div>
+            <div><h3>轉速 vs 輸水效率</h3><canvas id="chart-speed"></canvas></div>
+            <div><h3>半徑 vs 輸水效率</h3><canvas id="chart-radius"></canvas></div>
+        </div>
+        <div style="text-align:center;">
+            <button id="retry-button">🔁 再試一次</button>
+        </div>
+    </div>
+</div>
+
+<!-- 全螢幕警示視窗 -->
+<div class="warning-overlay" id="warning-overlay">
+    <div class="warning-box">
+        <h2>⚠️ 提醒</h2>
+        <p>你現在想要探討哪一個變因對輸水效率的影響呢?</p>
+        <button class="back-button" id="continue-button">返回實驗室</button>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+let experimentCount = 0;
+let experiments = [];
+let lastParams = null;
+let chartInstances = []; // 用於重繪時銷毀舊圖表
+
+/* 效率計算：純函數，同參數必得同結果 */
+const ANGLE_SCORE    = { "30": 0.75, "45": 1.00, "60": 0.85 };
+const SPEED_SCORE     = { "low": 1.00, "medium": 0.75, "high": 0.55 };
+const DIAMETER_SCORE  = { "2": 0.60, "4": 0.80, "6": 1.00 };
+function computeEfficiency(angle, speed, diameter) {
+    const score = ANGLE_SCORE[angle] * SPEED_SCORE[speed] * DIAMETER_SCORE[diameter];
+    return Math.round(90 * score);
+}
+
+const SPEED_DURATION = { "low": "2.4s", "medium": "1.4s", "high": "0.8s" };
+const THICKNESS_MAP  = { "2": 26, "4": 36, "6": 46 };
+
+/* 依目前選擇的角度/管徑，即時更新示意圖外觀 */
+function updatePumpVisual() {
+    const angle = document.getElementById('angle').value;
+    const diameter = document.getElementById('diameter').value;
+
+    document.getElementById('pump-tube-wrapper').style.transform = `rotate(-${angle}deg)`;
+
+    const thickness = THICKNESS_MAP[diameter];
+    const tube = document.getElementById('pump-tube');
+    tube.style.height = thickness + 'px';
+    tube.style.top = (-thickness / 2) + 'px';
+    tube.style.borderRadius = (thickness / 2) + 'px';
+}
+document.getElementById('angle').addEventListener('change', updatePumpVisual);
+document.getElementById('diameter').addEventListener('change', updatePumpVisual);
+window.addEventListener('DOMContentLoaded', updatePumpVisual);
+
+document.getElementById('enter-lab').onclick = function() {
+    document.getElementById('intro').style.display = 'none';
+    document.getElementById('experiment').style.display = 'block';
+    updatePumpVisual();
+};
+
+document.getElementById('continue-button').onclick = function() {
+    document.getElementById('warning-overlay').style.display = 'none';
+};
+
+document.getElementById('start-button').onclick = function() {
+    const angle = document.getElementById('angle').value;
+    const speed = document.getElementById('speed').value;
+    const diameter = document.getElementById('diameter').value;
+    const currentParams = { angle, speed, diameter };
+
+    if (lastParams) {
+        let changedCount = 0;
+        if (currentParams.angle !== lastParams.angle) changedCount++;
+        if (currentParams.speed !== lastParams.speed) changedCount++;
+        if (currentParams.diameter !== lastParams.diameter) changedCount++;
+        if (changedCount >= 2) {
+            document.getElementById('warning-overlay').style.display = 'flex';
+            return;
+        }
+    }
+
+    // 觸發動畫：螺紋滾動 + 水滴被帶上去 + 馬達旋轉
+    const scene = document.getElementById('pump-scene');
+    scene.style.setProperty('--dur', SPEED_DURATION[speed]);
+    document.getElementById('pump-tube-wrapper').classList.add('running');
+    document.getElementById('crank-motor').classList.add('running');
+
+    setTimeout(function() {
+        document.getElementById('pump-tube-wrapper').classList.remove('running');
+        document.getElementById('crank-motor').classList.remove('running');
+
+        const efficiency = computeEfficiency(angle, speed, diameter);
+
+        const resultsTable = document.getElementById('data-table').getElementsByTagName('tbody')[0];
+        const newRow = resultsTable.insertRow();
+        newRow.insertCell(0).innerText = experimentCount + 1;
+        newRow.insertCell(1).innerText = angle;
+        newRow.insertCell(2).innerText = speed;
+        newRow.insertCell(3).innerText = diameter;
+        newRow.insertCell(4).innerText = efficiency;
+
+        experiments.push({ angle, speed, diameter, efficiency });
+        lastParams = currentParams;
+        experimentCount++;
+
+        document.getElementById('results').style.display = 'block';
+
+        if (experimentCount >= 3) {
+            document.getElementById('discuss-results').disabled = false;
+            document.getElementById('hint').style.display = 'none';
+        }
+    }, 1600);
+};
+
+document.getElementById('discuss-results').onclick = function() {
+    document.getElementById('experiment').style.display = 'none';
+    document.getElementById('discussion').style.display = 'block';
+    drawCharts();
+};
+
+/* 「再試一次」：回到實驗室，保留所有既有紀錄 */
+document.getElementById('retry-button').onclick = function() {
+    document.getElementById('discussion').style.display = 'none';
+    document.getElementById('experiment').style.display = 'block';
+    updatePumpVisual();
+};
+
+function drawCharts() {
+    // 若之前已畫過圖，先銷毀避免重疊
+    chartInstances.forEach(c => c.destroy());
+    chartInstances = [];
+
+    chartInstances.push(new Chart(document.getElementById('chart-angle'), {
+        type: 'line',
+        data: {
+            labels: experiments.map(e => e.angle + '度'),
+            datasets: [{ label: '輸水效率(%)', data: experiments.map(e=>e.efficiency), borderColor: '#e74c3c', fill:false }]
+        },
+        options: { scales: { x: { title: { display:true, text:'夾角(度)' } }, y: { title:{display:true,text:'效率(%)'}, beginAtZero:true } } }
+    }));
+
+    chartInstances.push(new Chart(document.getElementById('chart-speed'), {
+        type: 'line',
+        data: {
+            labels: experiments.map(e => e.speed),
+            datasets: [{ label: '輸水效率(%)', data: experiments.map(e=>e.efficiency), borderColor: '#3498db', fill:false }]
+        },
+        options: { scales: { x: { title: { display:true, text:'轉速' } }, y: { title:{display:true,text:'效率(%)'}, beginAtZero:true } } }
+    }));
+
+    chartInstances.push(new Chart(document.getElementById('chart-radius'), {
+        type: 'line',
+        data: {
+            labels: experiments.map(e => e.diameter + '公尺'),
+            datasets: [{ label: '輸水效率(%)', data: experiments.map(e=>e.efficiency), borderColor: '#2ecc71', fill:false }]
+        },
+        options: { scales: { x: { title: { display:true, text:'半徑(公尺)' } }, y: { title:{display:true,text:'效率(%)'}, beginAtZero:true } } }
+    }));
+}
+</script>
+</body>
+</html>
